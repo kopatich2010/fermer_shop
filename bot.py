@@ -126,7 +126,7 @@ def products(message):
     data = db.getValue("product", "*")
     suitable_data = list(filter(lambda row: float(row[2]) > 0.0, data))
     if not suitable_data or not data:
-        print("К сожалению товары закончились")
+        bot.send_message(message.chat.id, "Товары закончились")
         return
     markup = tp.InlineKeyboardMarkup()
     for product in suitable_data:
@@ -366,6 +366,7 @@ def select_option(message):
 @bot.callback_query_handler(func=lambda callback: callback.data)
 def choose(callback):
     remove_markup(callback.message)
+    products_ids = [str(row[0]) for row in db.getValue("product", "product_id")]
     if callback.data.split()[0] in ['Центральный', 'Южный']:
         if len(callback.data.split()) == 2:
             phone = callback.data.split()[1]
@@ -386,13 +387,13 @@ def choose(callback):
         load_order(callback)
     elif callback.data.split()[0] == "delete_product_from_cart":
         delete_cart_product_from_db(callback)
+    elif callback.data in products_ids:
+        show_product_info(callback)
     else:
-        if callback.data:
-            show_product_info(callback)
+        bot.send_message(callback.message.chat.id, "Что то пошло не так")
 
 
 if __name__ == "__main__":
-    try:
-        bot.polling(none_stop=True)
-    except Exception:
-        pass
+    bot.polling(none_stop=True)
+
+

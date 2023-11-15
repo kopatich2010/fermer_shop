@@ -33,28 +33,32 @@ class Database:
 
     @dataBaseMethod
     def getValue(self, table, columns, condition=""):
-        self.cursor.execute(f"SELECT {columns} FROM {table}" + " " + condition)
+        sql = f"SELECT {columns} FROM {table}" + " " + condition
+        self.cursor.execute(sql)
         return self.cursor.fetchall()
 
     @dataBaseMethod
     def updateValue(self, table, row, value, condition=""):
-        self.cursor.execute(f"UPDATE {table} SET {row} = '{value}'" + " " + condition)
+        sql = f"UPDATE {table} SET {row} = '{value}'" + " " + condition
+        self.cursor.execute(sql)
         return 0
 
     @dataBaseMethod
     def deleteValue(self, table, condition=""):
-        self.cursor.execute(f"DELETE FROM {table}" + " " + condition)
+        sql = f"DELETE FROM {table}" + " " + condition
+        self.cursor.execute(sql)
         return 0
 
     @dataBaseMethod
     def insertCart(self, customer_id, product_id, taken_value):
-        self.cursor.execute(
-            f"INSERT INTO cart(customer_id, product_id, taken_value)  VALUES ({customer_id}, {product_id}, {taken_value})")
+        sql = f"INSERT INTO cart(customer_id, product_id, taken_value)  VALUES ({customer_id}, {product_id}, {taken_value})"
+        self.cursor.execute(sql)
         return 0
 
     @dataBaseMethod
     def insertUser(self, user_id, phone, area):
-        self.cursor.execute(f"INSERT INTO customer VALUES ({user_id}, '{phone}', '{area}')")
+        sql = f"INSERT INTO customer VALUES ({user_id}, '{phone}', '{area}')"
+        self.cursor.execute(sql)
         return 0
 
     @dataBaseMethod
