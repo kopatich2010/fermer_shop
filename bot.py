@@ -70,7 +70,7 @@ def change_phone(message):
     phone = str(message.contact.phone_number) if str(message.contact.phone_number)[0] != '+' else str(
         message.contact.phone_number)[1:]
 
-    db.updateValue('customer', 'phone_number', phone, condition=f"WHERE tg_id = {message.from_user.id}")
+    db.change_phone(phone, message.from_user.id)
     bot.send_message(message.chat.id, "Вы успешно сменили номер телефона", reply_markup=markup_account_menu)
 
 
@@ -87,7 +87,8 @@ def delete_customer_account(message):
 
 
 def delete_account(message):
-    db.deleteValue("customer", condition=f"WHERE tg_id = {message.chat.id}")
+    db.delete_account(message.chat.id)
+
     markup = tp.ReplyKeyboardMarkup(resize_keyboard=True)
     item = tp.KeyboardButton('Старт')
     markup.add(item)
@@ -111,7 +112,7 @@ def change_customer_area(message):
 
 
 def customer_account(message):
-    customer_data = db.getValue("customer", "*", condition=f"WHERE tg_id = {message.from_user.id}")[0]
+    customer_data = db.get_customer_data(message.from_user.id)[0]
     bot.send_message(message.chat.id, f"Ваш номер {customer_data[1]}\nВаш район {customer_data[2]}",
                      reply_markup=markup_account_menu)
 
@@ -123,8 +124,9 @@ def products(message):
         pass
     bot.send_message(message.chat.id, "Поиск товаров", reply_markup=markup_account_products)
 
-    data = db.getValue("product", "*")
-    suitable_data = list(filter(lambda row: float(row[2]) > 0.0, data))
+    data = db.get_product_data()
+    suitable_data = list(filter(lambda row: float(row[3]) > 0.0, data))
+
     if not suitable_data or not data:
         bot.send_message(message.chat.id, "Товары закончились")
         return
@@ -136,7 +138,8 @@ def products(message):
 
 
 def show_product_info(callback):
-    product_data = db.getValue("product", "*", condition=f"WHERE product_id = {callback.data}")[0]
+    product_id = callback.data[0]
+    product_data = db.get_product_data_by_product_id(product_id)[0]
     markup = tp.InlineKeyboardMarkup()
     item1 = tp.InlineKeyboardButton("Добавить в корзину", callback_data=f"add_to_cart {product_data[0]}")
     markup.add(item1)
@@ -151,10 +154,10 @@ def show_product_info(callback):
 def pick_value(callback):
     product_id = callback.data.split()[1]
 
-    remainder = float(db.getValue("product", "remainder", condition=f"WHERE product_id = {product_id}")[0][0])
+    remainder = float(db.get_remainder_product(product_id)[0][0])
 
     if not remainder:
-        print("К сожалению этот товар закончился")
+        bot.send_message(callback.message.chat.id, "Товар закончился")
         return
 
     markup = tp.InlineKeyboardMarkup()
@@ -173,13 +176,11 @@ def pick_value(callback):
 def add_to_cart(callback):
     taken_value = float(callback.data.split()[1])
     product_id = int(callback.data.split()[2])
-    cart_data = \
-        db.getValue("cart", "*", condition=f"WHERE "
-                                           f"customer_id = {callback.message.chat.id} AND product_id = {product_id}")
+    cart_data = db.get_product_in_cart(callback.message.chat.id, product_id)
+
     if cart_data:
         cart_data = cart_data[0]
-        db.updateValue("cart", "taken_value", taken_value + cart_data[3],
-                       condition=f"WHERE customer_id = {callback.message.chat.id} AND product_id = {product_id}")
+        db.change_product_in_cart_taken_value(taken_value, cart_data[3], callback.message.chat.id, product_id)
     else:
         db.insertCart(callback.message.chat.id, product_id, taken_value)
     bot.send_message(callback.message.chat.id, f"Продукт был успешно добавлен в вашу корзину",
@@ -187,9 +188,7 @@ def add_to_cart(callback):
 
 
 def show_cart_products(message):
-    data = db.free_request_fetch("SELECT product.name, product.cost, cart.taken_value "
-                                 "FROM cart INNER JOIN product ON product.product_id = cart.product_id "
-                                 f"WHERE customer_id = {message.from_user.id}")
+    data = db.get_cart_data(message.from_user.id)
     if not data:
         markup = tp.ReplyKeyboardMarkup(resize_keyboard=True)
         markup.add(tp.KeyboardButton("Назад"))
@@ -201,7 +200,6 @@ def show_cart_products(message):
         markup.add(tp.InlineKeyboardButton("Заказать", callback_data="make_order"))
         check = []
         cnt = 0
-        # check = "\n".join([f"{row[0]} {row[1]}руб. * {row[2]}л\кг = {round(int(row[1]) * float(row[2]), 2)} рублей" for row in data])
         for row in data:
             sm = round(int(row[1]) * float(row[2]), 2)
             check.append(f"{row[0]} {row[1]}руб. * {row[2]}л\кг = {sm} рублей")
@@ -211,27 +209,22 @@ def show_cart_products(message):
 
 
 def delete_cart_product(message):
-    data = db.free_request_fetch("SELECT product.name, cart.product_id "
-                                 "FROM cart INNER JOIN product ON cart.product_id = product.product_id "
-                                 f"WHERE cart.customer_id = {message.from_user.id}")
-    murkup = tp.InlineKeyboardMarkup()
+    data = db.get_product_data_by_user_id(message.from_user.id)
+    markup = tp.InlineKeyboardMarkup()
     for row in data:
         item = tp.InlineKeyboardButton(f"{row[0]}", callback_data=f"delete_product_from_cart  {row[1]}")
-        murkup.add(item)
-    bot.send_message(message.from_user.id, "Что вы хотите удалить", reply_markup=murkup)
+        markup.add(item)
+    bot.send_message(message.from_user.id, "Что вы хотите удалить", reply_markup=markup)
 
 
 def delete_cart_product_from_db(callback):
     product_id = callback.data.split()[1]
-    db.free_request_no_fetch(f"DELETE FROM cart "
-                             f"WHERE cart.product_id = {product_id} AND cart.customer_id = {callback.message.chat.id}")
+    db.delete_from_cart(product_id, callback.message.chat.id)
     bot.send_message(callback.message.chat.id, "Товар был убран из вашей корзины")
 
 
 def make_order(callback):
-    data = db.free_request_fetch(f"SELECT product.name, cart.taken_value, product.remainder "
-                                 f"FROM cart INNER JOIN product ON cart.product_id = product.product_id "
-                                 f"WHERE cart.customer_id = {callback.message.chat.id}")
+    data = db.get_product_name_taken_value_remainder(callback.message.chat.id)
     product_is_too_much = list(map(lambda row: (row[0], (float(row[1]) > float(row[2]))), data))
     for row in product_is_too_much:
         if row[1]:
@@ -247,36 +240,21 @@ def load_order(callback):
     tz_Vladivostok = pytz.timezone('Asia/Vladivostok')
     datetime_Vladivostok = datetime.datetime.now(tz_Vladivostok).strftime('%Y-%m-%d %H:%M:%S')
     bot.send_message(callback.message.chat.id, "Оформляем заказ")
-    cur = db.getCursor()
 
-    cur.execute(f"INSERT INTO orders(customer_id, date, payment_method, status) "
-                f"VALUES({callback.message.chat.id}, '{datetime_Vladivostok}', '{callback.data.split()[1]}', 0)")
+    order_id = db.insert_order(callback.message.chat.id, datetime_Vladivostok, callback.data.split()[1])
 
-    cur.execute(f"SELECT id from orders WHERE customer_id = {callback.message.chat.id}")
-    order_id = cur.fetchall()[-1][0]
+    cart_data = db.get_all_cart_data(callback.message.chat.id)
 
-    cur.execute(f"SELECT product_id, taken_value FROM cart WHERE customer_id = {callback.message.chat.id}")
-    cart_data = cur.fetchall()
+    request = ',\n'.join([f"({order_id[0][0]}, {row[0]}, {row[1]})" for row in cart_data])
 
-    request = ',\n'.join([f"({order_id}, {row[0]}, {row[1]})" for row in cart_data])
-
-    cur.execute(f"INSERT INTO positions(order_id, product_id, taken_value) VALUES {request}")
-
-    cur.execute(f"DELETE FROM cart WHERE customer_id = {callback.message.chat.id}")
-
-    for row in cart_data:
-        cur.execute(f"UPDATE product SET remainder = remainder - {row[1]} WHERE product_id = {row[0]}")
+    db.insert_position(callback.message.chat.id, request)
+    db.update_remainders_products(cart_data)
 
     bot.send_message(callback.message.chat.id, "Заказа успешно оформлен ожидайте звонка", reply_markup=markup_menu)
 
 
 def my_orders(message):
-    data = db.free_request_fetch(
-        "SELECT orders.id, product.name, positions.taken_value, product.cost, "
-        "orders.date, orders.payment_method, orders.status "
-        "FROM orders INNER JOIN positions ON orders.id = positions.order_id "
-        "INNER JOIN product ON positions.product_id = product.product_id "
-        f"WHERE orders.customer_id = {message.from_user.id}")
+    data = db.get_order_data(message.from_user.id)
     if not data:
         markup = tp.ReplyKeyboardMarkup(resize_keyboard=True)
         markup.add(tp.KeyboardButton("Назад"))
@@ -320,7 +298,7 @@ def contact_handler(message):
 
 @bot.message_handler(commands=['start'])
 def authorization(message):
-    customer_data = db.getValue("customer", "*", condition=f"WHERE tg_id = {message.from_user.id}")
+    customer_data = db.getValue("customer", "*", condition=f"WHERE tg_id = {message.chat.id if message.from_user.is_bot else message.from_user.id}")
     if customer_data:
         greeting(message)
     else:
@@ -337,63 +315,74 @@ def select_option(message):
         bot.edit_message_reply_markup(message.chat.id, message_id=message.message_id - 1, reply_markup=None)
     except Exception:
         pass
-    if message.text == "Старт":
-        authorization(message)
-    elif message.text == 'Приступить':
-        share_number(message)
-    elif message.text in ['Товары', 'Доступные товары']:
-        products(message)
-    elif message.text == 'Аккаунт':
-        customer_account(message)
-    elif message.text in ['Корзина', 'Моя корзина']:
-        show_cart_products(message)
-    elif message.text == 'Назад':
-        greeting(message)
-    elif message.text == 'Удалить аккаунт':
-        delete_customer_account(message)
-    elif message.text == 'Удалить продукт':
-        delete_cart_product(message)
-    elif message.text == 'Изменить номер':
-        change_customer_phone(message)
-    elif message.text == 'Изменить район':
-        change_customer_area(message)
-    elif message.text == 'Мои данные':
-        customer_account(message)
-    elif message.text == 'Мои заказы':
-        my_orders(message)
+    try:
+        if message.text == 'Приступить':
+            share_number(message)
+        elif message.text == "Старт" or (not db.get_customer_data(message.from_user.id)):
+            authorization(message)
+        elif message.text in ['Товары', 'Доступные товары']:
+            products(message)
+        elif message.text == 'Аккаунт':
+            customer_account(message)
+        elif message.text in ['Корзина', 'Моя корзина']:
+            show_cart_products(message)
+        elif message.text == 'Назад':
+            greeting(message)
+        elif message.text == 'Удалить аккаунт':
+            delete_customer_account(message)
+        elif message.text == 'Удалить продукт':
+            delete_cart_product(message)
+        elif message.text == 'Изменить номер':
+            change_customer_phone(message)
+        elif message.text == 'Изменить район':
+            change_customer_area(message)
+        elif message.text == 'Мои данные':
+            customer_account(message)
+        elif message.text == 'Мои заказы':
+            my_orders(message)
+    except Exception as e:
+        print(e)
 
 
 @bot.callback_query_handler(func=lambda callback: callback.data)
 def choose(callback):
-    remove_markup(callback.message)
-    products_ids = [str(row[0]) for row in db.getValue("product", "product_id")]
-    if callback.data.split()[0] in ['Центральный', 'Южный']:
-        if len(callback.data.split()) == 2:
-            phone = callback.data.split()[1]
-            area = callback.data.split()[0]
-            db.insertUser(callback.message.chat.id, phone, area)
-            greeting(callback.message)
+    print(callback.data)
+    try:
+        remove_markup(callback.message)
+    except Exception:
+        pass
+    try:
+        products_ids = db.get_product_ids()
+        if callback.data.split()[0] in ['Центральный', 'Южный']:
+            if len(callback.data.split()) == 2:
+                phone = callback.data.split()[1]
+                area = callback.data.split()[0]
+                db.insertUser(callback.message.chat.id, phone, area, 0)
+                greeting(callback.message)
+            else:
+                change_area(callback.message, callback.data)
+        elif not db.get_customer_data(callback.message.chat.id):
+            authorization(callback.message)
+            return
+        elif callback.data == 'confirm_delete_customer':
+            delete_account(callback.message)
+        elif callback.data.split()[0] == "add_to_cart":
+            pick_value(callback)
+        elif callback.data.split()[0] == "pick_value":
+            add_to_cart(callback)
+        elif callback.data == "make_order":
+            make_order(callback)
+        elif callback.data.split()[0] == "load_order":
+            load_order(callback)
+        elif callback.data.split()[0] == "delete_product_from_cart":
+            delete_cart_product_from_db(callback)
+        elif callback.data in products_ids:
+            show_product_info(callback)
         else:
-            change_area(callback.message, callback.data)
-    elif callback.data == 'confirm_delete_customer':
-        delete_account(callback.message)
-    elif callback.data.split()[0] == "add_to_cart":
-        pick_value(callback)
-    elif callback.data.split()[0] == "pick_value":
-        add_to_cart(callback)
-    elif callback.data == "make_order":
-        make_order(callback)
-    elif callback.data.split()[0] == "load_order":
-        load_order(callback)
-    elif callback.data.split()[0] == "delete_product_from_cart":
-        delete_cart_product_from_db(callback)
-    elif callback.data in products_ids:
-        show_product_info(callback)
-    else:
-        bot.send_message(callback.message.chat.id, "Что то пошло не так")
+            bot.send_message(callback.message.chat.id, "Что то пошло не так")
+    except Exception as e:
+        print(e)
 
 
 if __name__ == "__main__":
     bot.polling(none_stop=True)
-
-
