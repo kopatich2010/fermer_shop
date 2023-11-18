@@ -165,12 +165,23 @@ def pick_value(callback):
     for value in range(5, 31, 5):
         value = round(value / 10, 1)
         if remainder >= value:
-            item = tp.InlineKeyboardButton(f"{value}", callback_data=f"pick_value {value} {product_id}")
+            item = tp.InlineKeyboardButton(f"{value}", callback_data=f"pick_quantity {value} {product_id}")
             items.append(item)
     markup.add(*items)
     bot.send_message(callback.message.chat.id,
                      f"Выберите объём (объём представлен в литрах или килограммах в зависимости от товара)",
                      reply_markup=markup)
+
+
+def pick_quantity(callback):
+    data = [callback.data.split()[1], callback.data.split()[2]]  # picked_value product_id
+    m = tp.InlineKeyboardMarkup(row_width=3)
+    buf = []
+    for i in range(1, 6):
+        buf.append(tp.InlineKeyboardButton(f"{i}", callback_data=f"load_in_cart {round(float(data[0]) * i, 1)} {data[1]}"))
+    m.add(*buf)
+
+    bot.send_message(callback.message.chat.id, "Выберите количество", reply_markup=m)
 
 
 def add_to_cart(callback):
@@ -298,7 +309,8 @@ def contact_handler(message):
 
 @bot.message_handler(commands=['start'])
 def authorization(message):
-    customer_data = db.getValue("customer", "*", condition=f"WHERE tg_id = {message.chat.id if message.from_user.is_bot else message.from_user.id}")
+    customer_data = db.getValue("customer", "*",
+                                condition=f"WHERE tg_id = {message.chat.id if message.from_user.is_bot else message.from_user.id}")
     if customer_data:
         greeting(message)
     else:
@@ -368,7 +380,9 @@ def choose(callback):
             delete_account(callback.message)
         elif callback.data.split()[0] == "add_to_cart":
             pick_value(callback)
-        elif callback.data.split()[0] == "pick_value":
+        elif callback.data.split()[0] == "pick_quantity":
+            pick_quantity(callback)
+        elif callback.data.split()[0] == "load_in_cart":
             add_to_cart(callback)
         elif callback.data == "make_order":
             make_order(callback)
