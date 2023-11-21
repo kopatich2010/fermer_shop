@@ -75,7 +75,7 @@ def change_phone(message):
 
 
 def change_area(message, area):
-    db.updateValue('customer', 'area', area, condition=f"WHERE tg_id = {message.chat.id}")
+    db.change_area(message, area)
     bot.send_message(message.chat.id, "Вы успешно сменили район", reply_markup=markup_account_menu)
 
 
@@ -193,7 +193,7 @@ def add_to_cart(callback):
         cart_data = cart_data[0]
         db.change_product_in_cart_taken_value(taken_value, cart_data[3], callback.message.chat.id, product_id)
     else:
-        db.insertCart(callback.message.chat.id, product_id, taken_value)
+        db.insert_cart(callback.message.chat.id, product_id, taken_value)
     bot.send_message(callback.message.chat.id, f"Продукт был успешно добавлен в вашу корзину",
                      reply_markup=markup_account_products)
 
@@ -301,7 +301,7 @@ def my_orders(message):
 
 @bot.message_handler(content_types=['contact'])
 def contact_handler(message):
-    if not db.getValue("customer", "*", condition=f"WHERE tg_id = {message.from_user.id}"):
+    if not db.get_customer_data(message.from_user.id):
         share_area(message)
     else:
         change_phone(message)
@@ -309,8 +309,7 @@ def contact_handler(message):
 
 @bot.message_handler(commands=['start'])
 def authorization(message):
-    customer_data = db.getValue("customer", "*",
-                                condition=f"WHERE tg_id = {message.chat.id if message.from_user.is_bot else message.from_user.id}")
+    customer_data = db.get_customer_data(message.from_user.id)
     if customer_data:
         greeting(message)
     else:
@@ -369,7 +368,7 @@ def choose(callback):
             if len(callback.data.split()) == 2:
                 phone = callback.data.split()[1]
                 area = callback.data.split()[0]
-                db.insertUser(callback.message.chat.id, phone, area, 0)
+                db.insert_user(callback.message.chat.id, phone, area, 0, "NULL")
                 greeting(callback.message)
             else:
                 change_area(callback.message, callback.data)
